@@ -1,7 +1,7 @@
 #!/usr/bin/Rscript
 
 #load custom functions & packages
-source("../../../k9_atlas_scRNA/analysis/scripts/customFunctions_Seuratv5.R")
+source("/pl/active/dow_lab/dylan/repos/scrna-seq/analysis-code/customFunctions_Seuratv5.R")
 
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   begin preprocessing   ######## <<<<<<<<<<<<<<
@@ -31,14 +31,16 @@ seu.obj <- integrateData(din = "../output/s1/", dout = "../output/s2/", outName 
 #complete data visualization
 for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "integrated.rcpa")) {
     seu.obj <- dataVisUMAP(seu.obj = seu.obj, outDir = "../output/s3/", outName = x, 
-                            final.dims = 45, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.1, n.neighbors = 10,
-                            prefix = "RNA_snn_res.", assay = "RNA", reduction = x,
-                            saveRDS = F, return_obj = T, returnFeats = T,
-                            features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
-                                            "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
-                                            "CD4", "MS4A1", "PPBP","HBM")
+                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.1, n.neighbors = 10,
+                           prefix = "SCT_snn_res.", assay = "SCT", reduction = x,
+                           saveRDS = F, return_obj = T, returnFeats = T,
+                           features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
+                                        "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
+                                        "CD4", "MS4A1", "PPBP","HBM")
                           )
 }
+
+
 saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 
 ###################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
