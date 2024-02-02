@@ -9,14 +9,17 @@ library(circlize)
 ################################# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 #set output param
-outName <- "nasal_lavage_n8_2000_log"
+# outName <- "nasal_lavage_n8_2000_log"
+outName <- "nasal_lavage_n8_2000_log_cfam"
 reduction <- "umap.integrated.harmony"
 clusMain <- "clusterID_integrated.harmony"
 contrast <- c("Post", "Pre")
 
 #load in preprocessed data
-seu.obj <- readRDS("../output/s3/nasal_lavage_n8.rds") 
-seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
+# seu.obj <- readRDS("../output/s3/nasal_lavage_n8.rds")
+seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds")
+# seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
+seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "cellSource")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
@@ -24,7 +27,8 @@ seu.obj$clusterID_integrated.harmony <- factor(seu.obj$clusterID_integrated.harm
 seu.obj <- convertTOclusID(seu.obj = seu.obj, metaSlot = "majorID", newMetaName = "major_clusID")
 
 #set colors - run after determining majorIDs -- MANUAL
-colArray <- read.csv("./metaData/allCells_ID.csv")
+# colArray <- read.csv("./metaData/allCells_ID.csv")
+colArray <- read.csv("./metaData/allCells_ID_cfam.csv")
 # colArray <- colArray %>% arrange(majorID) %>% mutate(newCol = gg_color_hue(nrow(colArray)*3)[ c( rep(FALSE, 2), TRUE ) ] ) %>% arrange(clusterID_integrated.harmony)
 # write.csv(colArray,"./metaData/allCells_ID.csv", row.names = F)
 colArray <- colArray[ ,-c(3)]
@@ -47,7 +51,7 @@ vilnPlots(seu.obj = seu.obj, groupBy = "major_clusID", outName = outName,
          )
 
 #generate dot plots using vilnPlots resuts of majorID
-pi <- autoDot(seu.integrated.obj = seu.obj, inFile = paste0("../output/viln/", outName, "/", outName, "_gene_list.csv"), groupBy = "major_clusID",
+pi <- autoDot(seu.integrated.obj = seu.obj, inFile = paste0("../output/viln/", outName, "/", outName, "_major_clusID_gene_list.csv"), groupBy = "major_clusID",
                      MIN_LOGFOLD_CHANGE = 0.5, MIN_PCT_CELLS_EXPR_GENE = 0.1,
                     filterTerm = "ENSCAFG"
                     ) + theme(legend.box="vertical") + scale_fill_manual(values = colArray.sub$newCol)
@@ -55,14 +59,14 @@ ggsave(paste0("../output/", outName, "/", outName, "_autodot_major_clusID.png"),
 
 ### Export data for interactive cell browser
 ExportToCB_cus(seu.obj = seu.obj, dataset.name = outName, outDir = "../output/cb_input/", 
-                markers = paste0("../output/viln/", outName, "/", exptName,"_gene_list.csv"),
+                markers = paste0("../output/viln/", outName, "/", clusMain,"_gene_list.csv"),
                 reduction = "umap",  
                 colsTOkeep = c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt", "Phase", 
-                                "majorID", "clusterID", "name", "cellSource"), 
+                                "majorID", clusMain, "name", "cellSource"), 
                 skipEXPR = F, test = F,
                 feats = c("PTPRC", "CD3E", "CD8A", "GZMA", 
-                            "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
-                            "CD4", "MS4A1", "PPBP", "HBM")
+                          "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
+                          "CD4", "MS4A1", "PPBP", "HBM")
 
 )    
 
@@ -75,13 +79,26 @@ singleR(seu.obj = seu.obj, clusters = clusMain, reduction = reduction,
 pi <- DimPlot(seu.obj, 
                 reduction = reduction, 
                 group.by = clusMain,
-                cols = colArray$colz,
+                cols = colArray$newCol,
                 pt.size = 0.25,
                 label = TRUE,
                 label.box = TRUE
 ) + NoLegend()
 p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
 ggsave(paste0("../output/", outName, "/", outName, "_rawUMAP.png"), width = 7, height = 7)
+
+
+### Plot initial cluster UMAP
+pi <- DimPlot(seu.obj, 
+                reduction = reduction, 
+                group.by = "major_clusID",
+                cols = colArray.sub$newCol,
+                pt.size = 0.25,
+                label = TRUE,
+                label.box = TRUE
+) + NoLegend()
+p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
+ggsave(paste0("../output/", outName, "/", outName, "_majorClusUMAP.png"), width = 7, height = 7)
 
 
 ### Fig supp: umap by major ID
@@ -180,9 +197,48 @@ ggsave(paste0("../output/", outName, "/",outName, "_freqPlots_major.png"), width
 seu.obj$allCells <- "All cells"
 seu.obj$allCells <- as.factor(seu.obj$allCells)
 linDEG(seu.obj = seu.obj, threshold = 1, thresLine = F, groupBy = "allCells", comparison = "cellSource",contrast= c("Post","Pre"),
-       outDir = paste0("../output/", outName, "/linDEG/"), outName = outName, 
+       outDir = paste0("../output/", outName, "/"), outName = outName, 
        pValCutoff = 0.01, logfc.threshold = 0.58, saveGeneList = T, addLabs = ""
       )
+
+### Complete GSEA using the linDEG results
+df <- read.csv(paste0("../output/", outName, "/linDEG/", outName, "_All_cells_geneList.csv"))
+upGenes <- df %>% filter(avg_log2FC > 0) %>% pull(X)
+dwnGenes <- df %>% filter(avg_log2FC < 0) %>% pull(X)
+p <- plotGSEA(geneList = upGenes, geneListDwn = dwnGenes, category = "C5", subcategory = "GO:BP", 
+              upCol = "blue", dwnCol = "red", size = 3)
+
+minVal <- -20
+maxVal <- 20
+pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(padj)") + 
+    theme(axis.title=element_text(size = 16)) + 
+    annotate("segment", x = -0.1, 
+             y = 17, 
+             xend = minVal, 
+             yend = 17, 
+             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "blue",
+             size = 1, arrow = arrow(length = unit(0.1, "inches"))
+            ) + 
+    annotate(geom = "text", x = (minVal-0.1*1.5)/2-0.1*1.5, 
+             y = 18,
+             label = "Repressed",
+             hjust = 0.5,
+             vjust = 1.5,
+             size = 5) +
+    annotate("segment", x = 0.1, 
+             y = 17, 
+             xend = maxVal,
+             yend = 17,
+             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "red",
+             size = 1, arrow = arrow(length = unit(0.1, "inches"))
+            ) + 
+    annotate(geom = "text", x = (maxVal-0.1*1.5)/2+0.1*1.5, 
+             y = 18,
+             label = "Induced",
+             hjust = 0.5,
+             vjust = 1.5,
+             size = 5)
+ggsave(paste("../output/", outName, "/", outName, "_allCells_gsea.png", sep = ""), width = 10, height = 7)
 
 ### Complete pseudobulk DGE by all cells
 createPB(seu.obj = seu.obj, groupBy = "allCells", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
@@ -213,6 +269,7 @@ cnts_mat <- do.call(rbind, df.list)  %>% mutate(direction = ifelse(avg_log2FC > 
 colnames(cnts_mat) <- cnts_mat[1,]
 cnts_mat <- cnts_mat[-c(1),]
 class(cnts_mat) <- "numeric"
+cnts_mat[is.na(cnts_mat)] <- 0
 
 #order by number of total # of DEGs
 orderList <- rev(rownames(cnts_mat)[order(rowSums(cnts_mat))])
