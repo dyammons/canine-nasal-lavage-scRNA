@@ -20,6 +20,7 @@ seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.c
 
 seu.obj <- subset(seu.obj, subset = majorID == "nonImm")
 table(seu.obj$orig.ident)
+
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   begin preprocessing   ######## <<<<<<<<<<<<<<
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -42,6 +43,9 @@ for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "inte
 
 saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 
+################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+#######   begin analysis   ######## <<<<<<<<<<<<<<
+################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
