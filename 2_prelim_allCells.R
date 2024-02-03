@@ -59,15 +59,14 @@ ggsave(paste0("../output/", outName, "/", outName, "_autodot_major_clusID.png"),
 
 ### Export data for interactive cell browser
 ExportToCB_cus(seu.obj = seu.obj, dataset.name = outName, outDir = "../output/cb_input/", 
-                markers = paste0("../output/viln/", outName, "/", clusMain,"_gene_list.csv"),
-                reduction = "umap",  
+                markers = paste0("../output/viln/", outName, "/", outName, "_", clusMain,"_gene_list.csv"),
+                reduction = reduction,  
                 colsTOkeep = c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt", "Phase", 
                                 "majorID", clusMain, "name", "cellSource"), 
                 skipEXPR = F, test = F,
                 feats = c("PTPRC", "CD3E", "CD8A", "GZMA", 
                           "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
                           "CD4", "MS4A1", "PPBP", "HBM")
-
 )    
 
 #use singleR to ID cells
@@ -193,7 +192,7 @@ freqy <- freqPlots(seu.obj, method = 1, nrow = 1,
 ggsave(paste0("../output/", outName, "/",outName, "_freqPlots_major.png"), width = 8, height = 4)
 
 
-### Complete linDEG in pseudobulk-type format by all cells
+### Use lenitent Wilcoxon rank sum test
 seu.obj$allCells <- "All cells"
 seu.obj$allCells <- as.factor(seu.obj$allCells)
 linDEG(seu.obj = seu.obj, threshold = 1, thresLine = F, groupBy = "allCells", comparison = "cellSource",contrast= c("Post","Pre"),
@@ -201,15 +200,59 @@ linDEG(seu.obj = seu.obj, threshold = 1, thresLine = F, groupBy = "allCells", co
        pValCutoff = 0.01, logfc.threshold = 0.58, saveGeneList = T, addLabs = ""
       )
 
+
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj, groupBy = "allCells", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
+top.degs <- read.csv("../output/nasal_lavage_n8_2000_log_cfam/pseudoBulk/allCells/nasal_lavage_n8_2000_log_cfam_cluster_allCells_all_genes.csv") %>% filter(log2FoldChange > 0) %>% arrange(padj) %>% pull(gene)
+
+### Plot top DEGS
+features <- top.degs[1:6]
+features <- top.degs[7:12]
+set.seed(12)
+Idents(seu.obj) <- "cellSource"
+seu.obj.sub <- subset(seu.obj, downsample = min(table(seu.obj$cellSource)))
+p <- FeaturePlot(seu.obj.sub,features = features, 
+                 reduction = reduction, pt.size = 0.01, 
+                 split.by = "cellSource", order = T, 
+                 by.col = F) + labs(x = "UMAP1", y = "UMAP2") & theme(axis.text = element_blank(),
+                                                                      axis.title.y.right = element_text(size = 16),
+                                                                      axis.ticks = element_blank(),
+                                                                      axis.title = element_blank(),
+                                                                      axis.line = element_blank(),
+                                                                      plot.title = element_text(size=16),
+                                                                      title = element_blank(),
+                                                                      plot.margin = unit(c(1, 0, 0, 0), "pt")
+                                                                      ) & scale_color_gradient(breaks = pretty_breaks(n = 3), limits = c(NA, NA), low = "lightgrey", high = "darkblue")
+ggsave(paste0("../output/", outName, "/", outName, "_split_degs.png"), width = 12, height = 4)
+
+
+
 ### Complete GSEA using the linDEG results
-df <- read.csv(paste0("../output/", outName, "/linDEG/", outName, "_All_cells_geneList.csv"))
-upGenes <- df %>% filter(avg_log2FC > 0) %>% pull(X)
-dwnGenes <- df %>% filter(avg_log2FC < 0) %>% pull(X)
+df <- read.csv("../output/nasal_lavage_n8_2000_log_cfam/pseudoBulk/allCells/nasal_lavage_n8_2000_log_cfam_cluster_allCells_all_genes.csv") %>% arrange(padj)
+upGenes <- df %>% filter(log2FoldChange > 0) %>% pull(gene)
+dwnGenes <- df %>% filter(log2FoldChange < 0) %>% pull(gene)
 p <- plotGSEA(geneList = upGenes, geneListDwn = dwnGenes, category = "C5", subcategory = "GO:BP", 
               upCol = "blue", dwnCol = "red", size = 3)
 
-minVal <- -20
-maxVal <- 20
+minVal <- -15
+maxVal <- 25
 pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(padj)") + 
     theme(axis.title=element_text(size = 16)) + 
     annotate("segment", x = -0.1, 
@@ -240,32 +283,34 @@ pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(pa
              size = 5)
 ggsave(paste("../output/", outName, "/", outName, "_allCells_gsea.png", sep = ""), width = 10, height = 7)
 
-### Complete pseudobulk DGE by all cells
-createPB(seu.obj = seu.obj, groupBy = "allCells", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
-         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
-)
-
-pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"),
-          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
-          outName = outName, 
-          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
-          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
-          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
-)
-
-
 ### Or complete linDEG in each major group
 linDEG(seu.obj = seu.obj, groupBy = "majorID", comparison = "cellSource", contrast= c("Post","Pre"),
        outDir = paste0("../output/", outName, "/linDEG/"), outName = outName, 
        pValCutoff = 0.01, logfc.threshold = 0.58, saveGeneList = T, addLabs = ""
 )
 
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj, groupBy = "majorID", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"),
+          padj_cutoff = 0.1, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
 ### heatmap of dge results by major cell types
-files <- list.files(path = paste0("../output/", outName, "/linDEG/"), pattern=".csv", all.files=FALSE,
-                        full.names=T)
+files <- lapply(levels(seu.obj$majorID), function(x){paste0("../output/", outName, "/pseudoBulk/", x, "/", outName, "_cluster_", x, "_all_genes.csv")})
 df.list <- lapply(files, read.csv, header = T)
 
-cnts_mat <- do.call(rbind, df.list)  %>% mutate(direction = ifelse(avg_log2FC > 0, "Up", "Down")) %>% group_by(cellType,direction) %>% summarize(nRow = n()) %>% pivot_wider(names_from = cellType, values_from = nRow) %>% as.matrix() %>% t()
+cnts_mat <- do.call(rbind, df.list)  %>% mutate(direction = ifelse(log2FoldChange > 0, "Up", "Down")) %>% group_by(gs_base,direction) %>% summarize(nRow = n()) %>% pivot_wider(names_from = gs_base, values_from = nRow) %>% as.matrix() %>% t()
 colnames(cnts_mat) <- cnts_mat[1,]
 cnts_mat <- cnts_mat[-c(1),]
 class(cnts_mat) <- "numeric"
