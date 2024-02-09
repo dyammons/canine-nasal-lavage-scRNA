@@ -3,6 +3,7 @@
 #load custom functions & packages
 source("/pl/active/dow_lab/dylan/repos/scrna-seq/analysis-code/customFunctions_Seuratv5.R")
 library(circlize)
+library(scProportionTest)
 
 ################################# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 ###  BEGIN allCells analysis  ### <<<<<<<<<<<<<<
@@ -21,6 +22,8 @@ seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds")
 # seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "cellSource")
+seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "cellSource2")
+seu.obj$cellSource2 <- factor(seu.obj$cellSource2, levels = c("d0","d14","d90"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
 seu.obj$clusterID_integrated.harmony <- factor(seu.obj$clusterID_integrated.harmony, levels = 0:max(as.numeric(names(table(seu.obj$clusterID_integrated.harmony)))))
@@ -183,6 +186,15 @@ freqy <- freqPlots(seu.obj, method = 1, nrow = 3,
 ggsave(paste0("../output/", outName, "/",outName, "_freqPlots_cluster.png"), width = 12, height = 8)
 
 
+### Frequency plots to run stats - major with 3 levels
+freqy <- freqPlots(seu.obj, method = 1, nrow = 1, 
+                   comp = "cellSource2", groupBy = "majorID", legTitle = "Cell source", refVal = "name",
+                   namez = "name", 
+                   colz = "colz"
+)
+ggsave(paste0("../output/", outName, "/",outName, "_freqPlots_major2.png"), width = 8, height = 4)
+
+
 ### Frequency plots to run stats - major
 freqy <- freqPlots(seu.obj, method = 1, nrow = 1, 
                    comp = "cellSource", groupBy = "majorID", legTitle = "Cell source", refVal = "name",
@@ -190,6 +202,46 @@ freqy <- freqPlots(seu.obj, method = 1, nrow = 1,
                    colz = "colz"
 )
 ggsave(paste0("../output/", outName, "/",outName, "_freqPlots_major.png"), width = 8, height = 4)
+
+#run paired analysis
+df <- freqy$data %>% separate(name, into = c(NA, "dog"))
+
+lapply(levels(df$majorID), function(x){
+    df.sub <- filter(df, majorID == x)
+    wilcox.test(freq ~ cellSource, data = df.sub, paired = TRUE)
+})
+
+
+### Evaluate cell frequency by cluster using monte carlo permutation
+log2FD_threshold <- 0.58
+Idents(seu.obj) <- "name"
+set.seed(12)
+seu.obj.sub <- subset(x = seu.obj, downsample = min(table(seu.obj$name)))
+prop_test <- sc_utils(seu.obj.sub)
+prop_test <- permutation_test( prop_test, cluster_identity = "majorID", sample_1 = "Pre", sample_2 = "Post", sample_identity = "cellSource" )
+
+p <- permutation_plot(prop_test)  + theme(axis.title.y = element_blank(),
+                                          legend.position = "top") + guides(colour = guide_legend("", nrow = 2, 
+                                                                                                  byrow = TRUE)) + coord_flip()
+res.df <- prop_test@results$permutation
+res.df <- res.df %>% mutate(Significance = as.factor(ifelse(obs_log2FD < -log2FD_threshold & FDR < 0.01,"Down",
+                                                            ifelse(obs_log2FD > log2FD_threshold & FDR < 0.01,"Up","n.s.")))
+                           ) %>% arrange(obs_log2FD)
+
+res.df$clusters <- factor(res.df$clusters, levels = c(res.df$clusters))
+p <- ggplot(res.df, aes(x = clusters, y = obs_log2FD)) + 
+geom_pointrange(aes(ymin = boot_CI_2.5, ymax = boot_CI_97.5, 
+                    color = Significance)) + theme_bw() + geom_hline(yintercept = log2FD_threshold, 
+                                                                     lty = 2) + geom_hline(yintercept = -log2FD_threshold, 
+                                                                                           lty = 2) + 
+geom_hline(yintercept = 0) + scale_color_manual(values = c("blue", "red","grey")
+                                               ) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 14),
+                                                         axis.title.x = element_blank(),
+                                                         legend.position = "top",
+                                                         plot.margin = margin(c(3,3,0,24))
+                                                        ) + ylab("abundance change (log2FC)")
+
+ggsave(paste("../output/", outName, "/",outName, "_propTest.png", sep = ""), width = 3.5, height = 2, scale = 2 )
 
 
 ### Use lenitent Wilcoxon rank sum test
@@ -283,28 +335,142 @@ pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(pa
              size = 5)
 ggsave(paste("../output/", outName, "/", outName, "_allCells_gsea.png", sep = ""), width = 10, height = 7)
 
-### Or complete linDEG in each major group
+
+### Evalute the DGE results for overlap with nanostring data
+all.degs <- read.csv("../output/nasal_lavage_n8_2000_log_cfam/pseudoBulk/allCells/nasal_lavage_n8_2000_log_cfam_cluster_allCells_all_genes.csv")
+nanoGenes <- read.csv("./metaData/nanoString_genes.csv", header = F)
+
+all.degs$gene[all.degs$gene %in% nanoGenes$V1] %>% length()
+#155
+
+### Investigate if d14 or d90 is driving DEGs
+Idents(seu.obj) <- "name"
+seu.obj.sub <- subset(seu.obj, idents = c("pre_1", "pre_2", "post_1", "post_2"))
+table(seu.obj.sub$name)
+
+seu.obj.sub$d90 <- "d90"
+seu.obj.sub$d90 <- as.factor(seu.obj$d90)
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj.sub, groupBy = "d90", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/d90_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/d90_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d90_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
+Idents(seu.obj) <- "name"
+seu.obj.sub <- subset(seu.obj, idents = c("pre_3", "pre_4", "post_3", "post_4"))
+table(seu.obj.sub$name)
+
+seu.obj.sub$d14 <- "d14"
+seu.obj.sub$d14 <- as.factor(seu.obj$d14)
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj.sub, groupBy = "d14", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
+
+
+### Complete linDEG in each major group
 linDEG(seu.obj = seu.obj, groupBy = "majorID", comparison = "cellSource", contrast= c("Post","Pre"),
        outDir = paste0("../output/", outName, "/linDEG/"), outName = outName, 
        pValCutoff = 0.01, logfc.threshold = 0.58, saveGeneList = T, addLabs = ""
 )
 
-### Complete pseudobulk DGE by all cells
+### Complete pseudobulk DGE by each majorID cell type
 createPB(seu.obj = seu.obj, groupBy = "majorID", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
          clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
 )
 
+#add metadata to properly pair the analysis
 df <- read.csv(paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"), row.names = 1)
 df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
-write.csv(df, paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"))
 
 pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"),
-          padj_cutoff = 0.1, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
           outName = outName, 
           idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
           inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
           filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
 )
+
+
+
+### Continue to investigate if d14 or d90 is driving DEGs -- this approach is not currently working
+Idents(seu.obj) <- "name"
+seu.obj.sub <- subset(seu.obj, idents = c("pre_1", "pre_2", "post_1", "post_2"))
+table(seu.obj.sub$name)
+
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj.sub, groupBy = "majorID", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = paste0(outName, "_d90"), 
+          paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
+Idents(seu.obj) <- "name"
+seu.obj.sub <- subset(seu.obj, idents = c("pre_3", "pre_4", "post_3", "post_4"))
+table(seu.obj.sub$name)
+
+seu.obj.sub$d14 <- "d14"
+seu.obj.sub$d14 <- as.factor(seu.obj$d14)
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj.sub, groupBy = "d14", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
 
 ### heatmap of dge results by major cell types
 files <- lapply(levels(seu.obj$majorID), function(x){paste0("../output/", outName, "/pseudoBulk/", x, "/", outName, "_cluster_", x, "_all_genes.csv")})
