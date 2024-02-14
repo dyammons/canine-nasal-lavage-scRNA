@@ -9,17 +9,17 @@ library(scProportionTest)
 ###  BEGIN allCells analysis  ### <<<<<<<<<<<<<<
 ################################# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-#set output param
+### Set output params
 # outName <- "nasal_lavage_n8_2000_log"
 outName <- "nasal_lavage_n8_2000_log_cfam"
 reduction <- "umap.integrated.harmony"
 clusMain <- "clusterID_integrated.harmony"
 contrast <- c("Post", "Pre")
 
-#load in preprocessed data
-# seu.obj <- readRDS("../output/s3/nasal_lavage_n8.rds")
-seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds")
+### Load in preprocessed data & metadata
+# seu.obj <- readRDS("../output/s3/nasal_lavage_n8.rds") #load in GSD (CanFam4 aligned) data
 # seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
+seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds") #load CanFam3.1 aligned data
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "cellSource")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "cellSource2")
@@ -27,6 +27,7 @@ seu.obj$cellSource2 <- factor(seu.obj$cellSource2, levels = c("d0","d14","d90"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
 seu.obj$clusterID_integrated.harmony <- factor(seu.obj$clusterID_integrated.harmony, levels = 0:max(as.numeric(names(table(seu.obj$clusterID_integrated.harmony)))))
+seu.obj$clusterID  <- seu.obj$clusterID_integrated.harmony 
 seu.obj <- convertTOclusID(seu.obj = seu.obj, metaSlot = "majorID", newMetaName = "major_clusID")
 
 #set colors - run after determining majorIDs -- MANUAL
@@ -37,23 +38,23 @@ colArray <- read.csv("./metaData/allCells_ID_cfam.csv")
 colArray <- colArray[ ,-c(3)]
 colArray.sub <- na.omit(colArray[colArray$majCol == "yes",])
 
-#check QC params
+### Check QC params
 features <- c("nCount_RNA", "nFeature_RNA", "percent.mt")
 p <- prettyFeats(seu.obj = seu.obj, reduction = reduction, nrow = 1, ncol = 3, features = features, 
                     color = "black", order = F, pt.size = 0.0000001, title.size = 18)
 ggsave(paste0("../output/", outName, "/", outName, "_QC_feats.png"), width = 9, height = 3)
 
-#generate viln plots using harmony clusters
+### Generate viln plots using harmony clusters
 vilnPlots(seu.obj = seu.obj, groupBy = clusMain, outName = outName,
           outDir = paste0("../output/viln/", outName, "/"), returnViln = T 
          )
 
-#generate viln plots using majorID
+### Generate viln plots using majorID
 vilnPlots(seu.obj = seu.obj, groupBy = "major_clusID", outName = outName,
           outDir = paste0("../output/viln/", outName, "/"), returnViln = T 
          )
 
-#generate dot plots using vilnPlots resuts of majorID
+### Generate dot plots using vilnPlots resuts of majorID
 pi <- autoDot(seu.integrated.obj = seu.obj, inFile = paste0("../output/viln/", outName, "/", outName, "_major_clusID_gene_list.csv"), groupBy = "major_clusID",
                      MIN_LOGFOLD_CHANGE = 0.5, MIN_PCT_CELLS_EXPR_GENE = 0.1,
                     filterTerm = "ENSCAFG"
@@ -72,7 +73,7 @@ ExportToCB_cus(seu.obj = seu.obj, dataset.name = outName, outDir = "../output/cb
                           "CD4", "MS4A1", "PPBP", "HBM")
 )    
 
-#use singleR to ID cells
+### Use singleR to ID cells
 singleR(seu.obj = seu.obj, clusters = clusMain, reduction = reduction, 
         outDir = "../output/singleR/", outName = outName)
 
@@ -253,6 +254,46 @@ linDEG(seu.obj = seu.obj, threshold = 1, thresLine = F, groupBy = "allCells", co
       )
 
 
+### Complete GSEA using the linDEG results
+df <- read.csv("../output/nasal_lavage_n8_2000_log_cfam/pseudoBulk/allCells/nasal_lavage_n8_2000_log_cfam_cluster_allCells_all_genes.csv") %>% arrange(padj)
+upGenes <- df %>% filter(log2FoldChange > 0) %>% pull(gene)
+dwnGenes <- df %>% filter(log2FoldChange < 0) %>% pull(gene)
+p <- plotGSEA(geneList = upGenes, geneListDwn = dwnGenes, category = "C5", subcategory = "GO:BP", 
+              upCol = "blue", dwnCol = "red", size = 3)
+
+minVal <- -15
+maxVal <- 25
+pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(padj)") + 
+    theme(axis.title=element_text(size = 16)) + 
+    annotate("segment", x = -0.1, 
+             y = 17, 
+             xend = minVal, 
+             yend = 17, 
+             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "blue",
+             size = 1, arrow = arrow(length = unit(0.1, "inches"))
+            ) + 
+    annotate(geom = "text", x = (minVal-0.1*1.5)/2-0.1*1.5,
+             y = 18,
+             label = "Repressed",
+             hjust = 0.5,
+             vjust = 1.5,
+             size = 5) +
+    annotate("segment", x = 0.1,
+             y = 17,
+             xend = maxVal,
+             yend = 17,
+             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "red",
+             size = 1, arrow = arrow(length = unit(0.1, "inches"))
+            ) + 
+    annotate(geom = "text", x = (maxVal-0.1*1.5)/2+0.1*1.5, 
+             y = 18,
+             label = "Induced",
+             hjust = 0.5,
+             vjust = 1.5,
+             size = 5)
+ggsave(paste("../output/", outName, "/", outName, "_allCells_gsea.png", sep = ""), width = 10, height = 7)
+
+
 ### Complete pseudobulk DGE by all cells
 createPB(seu.obj = seu.obj, groupBy = "allCells", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
          clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
@@ -261,6 +302,7 @@ createPB(seu.obj = seu.obj, groupBy = "allCells", comp = "cellSource", biologica
 #add dog metadata to account for paired nature of the data
 df <- read.csv(paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"), row.names = 1)
 df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+df$tp <- c(1,1,1,1,3,3,2,2)
 write.csv(df, paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"))
 
 pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/allCells_deg_metaData.csv"),
@@ -293,47 +335,6 @@ p <- FeaturePlot(seu.obj.sub,features = features,
                                                                       plot.margin = unit(c(1, 0, 0, 0), "pt")
                                                                       ) & scale_color_gradient(breaks = pretty_breaks(n = 3), limits = c(NA, NA), low = "lightgrey", high = "darkblue")
 ggsave(paste0("../output/", outName, "/", outName, "_split_degs.png"), width = 12, height = 4)
-
-
-
-### Complete GSEA using the linDEG results
-df <- read.csv("../output/nasal_lavage_n8_2000_log_cfam/pseudoBulk/allCells/nasal_lavage_n8_2000_log_cfam_cluster_allCells_all_genes.csv") %>% arrange(padj)
-upGenes <- df %>% filter(log2FoldChange > 0) %>% pull(gene)
-dwnGenes <- df %>% filter(log2FoldChange < 0) %>% pull(gene)
-p <- plotGSEA(geneList = upGenes, geneListDwn = dwnGenes, category = "C5", subcategory = "GO:BP", 
-              upCol = "blue", dwnCol = "red", size = 3)
-
-minVal <- -15
-maxVal <- 25
-pi <- p + scale_x_continuous(limits = c(minVal, maxVal), name = "Signed log10(padj)") + 
-    theme(axis.title=element_text(size = 16)) + 
-    annotate("segment", x = -0.1, 
-             y = 17, 
-             xend = minVal, 
-             yend = 17, 
-             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "blue",
-             size = 1, arrow = arrow(length = unit(0.1, "inches"))
-            ) + 
-    annotate(geom = "text", x = (minVal-0.1*1.5)/2-0.1*1.5, 
-             y = 18,
-             label = "Repressed",
-             hjust = 0.5,
-             vjust = 1.5,
-             size = 5) +
-    annotate("segment", x = 0.1, 
-             y = 17, 
-             xend = maxVal,
-             yend = 17,
-             lineend = "round", linejoin = "bevel", linetype ="solid", colour = "red",
-             size = 1, arrow = arrow(length = unit(0.1, "inches"))
-            ) + 
-    annotate(geom = "text", x = (maxVal-0.1*1.5)/2+0.1*1.5, 
-             y = 18,
-             label = "Induced",
-             hjust = 0.5,
-             vjust = 1.5,
-             size = 5)
-ggsave(paste("../output/", outName, "/", outName, "_allCells_gsea.png", sep = ""), width = 10, height = 7)
 
 
 ### Evalute the DGE results for overlap with nanostring data
@@ -451,20 +452,20 @@ seu.obj.sub <- subset(seu.obj, idents = c("pre_3", "pre_4", "post_3", "post_4"))
 table(seu.obj.sub$name)
 
 seu.obj.sub$d14 <- "d14"
-seu.obj.sub$d14 <- as.factor(seu.obj$d14)
+seu.obj.sub$d14 <- as.factor(seu.obj.sub$d14)
 ### Complete pseudobulk DGE by all cells
-createPB(seu.obj = seu.obj.sub, groupBy = "d14", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+createPB(seu.obj = seu.obj.sub, groupBy = "majorID", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
          clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
 )
 
 #add dog metadata to account for paired nature of the data
-df <- read.csv(paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"), row.names = 1)
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"), row.names = 1)
 df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
-write.csv(df, paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"))
 
-pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.csv"),
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/majorID_deg_metaData.csv"),
           padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
-          outName = outName, 
+          outName = paste0(outName, "_d14"), 
           paired = T, pairBy = "dog", test.use = "Wald", strict_lfc = F,
           idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
           inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "All cells", 
@@ -474,6 +475,10 @@ pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d14_deg_metaData.
 
 ### heatmap of dge results by major cell types
 files <- lapply(levels(seu.obj$majorID), function(x){paste0("../output/", outName, "/pseudoBulk/", x, "/", outName, "_cluster_", x, "_all_genes.csv")})
+files <- lapply(levels(seu.obj$majorID), function(x){paste0("../output/", outName, "/pseudoBulk/", x, "/", outName, "_d14_cluster_", x, "_all_genes.csv")})
+files <- lapply(levels(seu.obj$majorID), function(x){paste0("../output/", outName, "/pseudoBulk/", x, "/", outName, "_d90_cluster_", x, "_all_genes.csv")})
+files <- files[1:4] #run for d90 b/c too few B cells
+
 df.list <- lapply(files, read.csv, header = T)
 
 cnts_mat <- do.call(rbind, df.list)  %>% mutate(direction = ifelse(log2FoldChange > 0, "Up", "Down")) %>% group_by(gs_base,direction) %>% summarize(nRow = n()) %>% pivot_wider(names_from = gs_base, values_from = nRow) %>% as.matrix() %>% t()
@@ -485,7 +490,7 @@ cnts_mat[is.na(cnts_mat)] <- 0
 #order by number of total # of DEGs
 orderList <- rev(rownames(cnts_mat)[order(rowSums(cnts_mat))])
 cnts_mat <- cnts_mat[match(orderList, rownames(cnts_mat)),]        
-       
+
 png(file = paste0("../output/", outName, "/", outName, "_deg_heat.png"), width=1500, height=2000, res=400)
 par(mfcol=c(1,1))         
 ht <- Heatmap(cnts_mat,#name = "mat", #col = col_fun,
