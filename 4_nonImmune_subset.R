@@ -7,6 +7,7 @@ source("/pl/active/dow_lab/dylan/repos/scrna-seq/analysis-code/customFunctions_S
 #######   customize variables   ######## <<<<<<<<<<<<<<
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+
 #set output param
 outName <- "240202_lav_nonImm_n8_2000_log_cfam"
 reduction <- "umap.integrated.harmony"
@@ -14,16 +15,17 @@ clusMain <- "clusterID_integrated.harmony"
 contrast <- c("Post", "Pre")
 
 
-#load in the proprocessed data & subset on pop of interest
-seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds")
-seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
-
-seu.obj <- subset(seu.obj, subset = majorID == "nonImm")
-table(seu.obj$orig.ident)
-
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   begin preprocessing   ######## <<<<<<<<<<<<<<
 ######################################## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+#load in the proprocessed data & subset on pop of interest
+seu.obj <- readRDS("../output/s3/nasal_lavage_n8_log_canFam_S3.rds")
+seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/allCells_ID_cfam.csv", groupBy = "clusterID_integrated.harmony", metaAdd = "majorID")
+seu.obj$clusterID  <- seu.obj$clusterID_integrated.harmony 
+
+seu.obj <- subset(seu.obj, subset = majorID == "nonImm")
+table(seu.obj$orig.ident)
 
 #integrate the data using all of the four Seurat v5 integration methods
 seu.obj <- integrateData(seu.obj = seu.obj, dout = "../output/s2/", outName = outName, 
@@ -43,10 +45,56 @@ for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "inte
 
 saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 
+#low quality cells identified, load object back in, remove cells, reintegrate
+seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
+
+
+#inspect inciting clusters
+pi <- DimPlot(seu.obj, 
+                reduction = reduction, 
+                group.by = "clusterID",
+#                 cols = colArray$newCol,
+                pt.size = 0.25,
+                label = TRUE,
+                label.box = TRUE
+) + NoLegend()
+p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
+ggsave(paste0("../output/", outName, "/", outName, "_clusID_orig_UMAP.png"), width = 7, height = 7)
+
+
+Idents(seu.obj) <- "clusterID_integrated.harmony"
+seu.obj.sub <- subset(seu.obj, invert = T, idents = c(2)) #there are likely more to exclude
+table(seu.obj.sub$clusterID_integrated.harmony)
+
+#integrate the data using all of the four Seurat v5 integration methods
+seu.obj <- integrateData(seu.obj = seu.obj.sub, dout = "../output/s2/", outName = paste0(outName,"_clean"), 
+                         runAllMethods = TRUE, normalization.method = "LogNormalize", indReClus = T)
+
+#complete data visualization
+for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "integrated.rcpa")) {
+    seu.obj <- dataVisUMAP(seu.obj = seu.obj, outDir = "../output/s3/", outName = paste0(outName, "_clean_", x), 
+                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.1, n.neighbors = 10,
+                           prefix = "RNA_snn_res.", assay = "RNA", reduction = x,
+                           saveRDS = F, return_obj = T, returnFeats = T,
+                           features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
+                                        "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
+                                        "CD4", "MS4A1", "PPBP","HBM")
+                          )
+}
+
+saveRDS(seu.obj, paste0("../output/s3/",outName,"_clean_S3.rds"))
+
 ################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   begin analysis   ######## <<<<<<<<<<<<<<
 ################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+#set output param
+outName <- "240202_lav_nonImm_n8_2000_log_cfam_clean"
+reduction <- "umap.integrated.harmony"
+clusMain <- "clusterID_integrated.harmony"
+contrast <- c("Post", "Pre")
+
+#load in data and metadata
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
@@ -73,6 +121,19 @@ singleR(seu.obj = seu.obj, clusters = clusMain, reduction = reduction,
         outDir = "../output/singleR/", outName = outName)
 
 
+### Plot orig clusterID
+pi <- DimPlot(seu.obj, 
+                reduction = reduction, 
+                group.by = 'clusterID',
+#                 cols = colArray$newCol,
+                pt.size = 0.25,
+                label = TRUE,
+                label.box = TRUE
+) + NoLegend()
+p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
+ggsave(paste0("../output/", outName, "/", outName, "_clusID_orig_UMAP.png"), width = 7, height = 7)
+
+
 ### Plot initial cluster UMAP
 pi <- DimPlot(seu.obj, 
                 reduction = reduction, 
@@ -84,6 +145,16 @@ pi <- DimPlot(seu.obj,
 ) + NoLegend()
 p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
 ggsave(paste0("../output/", outName, "/", outName, "_rawUMAP.png"), width = 7, height = 7)
+
+
+### Key feature plots
+features <- c("PTPRC","CD3E","ANPEP", 
+                "DLA-DRA","CSF3R","S100A12", 
+                "CD68","FLT3","FCER1A", 
+                "EPCAM","COL1A1","CD34",
+                "COL1A2","MS4A1","TOP2A")
+p <- prettyFeats(seu.obj = seu.obj, nrow = 5, ncol = 3, title.size = 14, features = features, order = F, legJust = "top", reduction = reduction) 
+ggsave(paste0("../output/", outName, "/", outName, "_featPlots.png"), width = 9, height = 15)
 
 
 ### UMAP by sample -- if unequal sample size downsample by cellSource
