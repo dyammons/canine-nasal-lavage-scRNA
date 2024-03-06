@@ -367,6 +367,60 @@ top.degs.d14 <- read.csv(paste0("../output/", outName, "/pseudoBulk/d14/", outNa
 intersect(top.degs.d90, top.degs.d14)
 # [1] "GBP1"
 
+
+########## DOUBLE BONUS ##########
+
+
+contrast <- c("d0_90", "d0_14")
+
+Idents(seu.obj) <- "name"
+seu.obj.sub <- subset(seu.obj, idents = c("pre_1", "pre_2", "pre_3", "pre_4"))
+table(seu.obj.sub$name)
+
+seu.obj.sub$d0 <- "d0"
+seu.obj.sub$d0 <- as.factor(seu.obj$d0)
+### Complete pseudobulk DGE by all cells
+createPB(seu.obj = seu.obj.sub, groupBy = "d0", comp = "cellSource", biologicalRep = "name", lowFilter = T, dwnSam = F, 
+         clusters = NULL, outDir = paste0("../output/", outName, "/pseudoBulk/")
+)
+
+#add dog metadata to account for paired nature of the data
+df <- read.csv(paste0("../output/", outName, "/pseudoBulk/d0_deg_metaData.csv"), row.names = 1)
+df$dog <- unlist(lapply(df$sampleID, function(x){strsplit(x, "_")[[1]][2]}))
+write.csv(df, paste0("../output/", outName, "/pseudoBulk/d0_deg_metaData.csv"))
+
+pseudoDEG(metaPWD = paste0("../output/", outName, "/pseudoBulk/d0_deg_metaData.csv"),
+          padj_cutoff = 0.05, lfcCut = 0.58, outDir = paste0("../output/", outName, "/pseudoBulk/"), 
+          outName = outName, 
+          paired = F, test.use = "Wald", strict_lfc = F,
+          idents.1_NAME = contrast[1], idents.2_NAME = contrast[2],
+          inDir = paste0("../output/", outName, "/pseudoBulk/"), title = "d0_90 vs d0_14", 
+          filterTerm = "ZZZZ", addLabs = NULL, mkDir = T
+)
+
+
+top.degs <- read.csv(paste0("../output/", outName, "/pseudoBulk/d0/", outName, "_cluster_d0_all_genes.csv")) %>% filter(log2FoldChange > 0) %>% arrange(padj) %>% pull(gene)
+
+### Plot top DEGS
+features <- top.degs[c(2:6,8,9)]
+set.seed(12)
+Idents(seu.obj) <- "cellSource"
+seu.obj.sub <- subset(seu.obj, downsample = min(table(seu.obj$cellSource)))
+p <- FeaturePlot(seu.obj.sub,features = features, 
+                 reduction = reduction, pt.size = 0.01, 
+                 split.by = "cellSource", order = T, 
+                 by.col = F) + labs(x = "UMAP1", y = "UMAP2") & theme(axis.text = element_blank(),
+                                                                      axis.title.y.right = element_text(size = 16),
+                                                                      axis.ticks = element_blank(),
+                                                                      axis.title = element_blank(),
+                                                                      axis.line = element_blank(),
+                                                                      plot.title = element_text(size=16),
+                                                                      title = element_blank(),
+                                                                      plot.margin = unit(c(1, 0, 0, 0), "pt")
+                                                                      ) & scale_color_gradient(breaks = pretty_breaks(n = 3), limits = c(NA, NA), low = "lightgrey", high = "darkblue")
+ggsave(paste0("../output/", outName, "/", outName, "_split_d14_degs.png"), width = 16, height = 4)
+
+
 ################################# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   end analysis   ######## <<<<<<<<<<<<<<
 ################################# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
