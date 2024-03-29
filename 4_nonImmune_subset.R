@@ -48,8 +48,7 @@ saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 #low quality cells identified, load object back in, remove cells, reintegrate
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 
-
-#inspect inciting clusters
+#inspect inital clusters
 pi <- DimPlot(seu.obj, 
                 reduction = reduction, 
                 group.by = "clusterID",
@@ -61,19 +60,58 @@ pi <- DimPlot(seu.obj,
 p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
 ggsave(paste0("../output/", outName, "/", outName, "_clusID_orig_UMAP.png"), width = 7, height = 7)
 
+#inspect new clusters
+pi <- DimPlot(seu.obj, 
+                reduction = reduction, 
+                group.by = "clusterID_integrated.harmony",
+#                 cols = colArray$newCol,
+                pt.size = 0.25,
+                label = TRUE,
+                label.box = TRUE
+) + NoLegend()
+p <- cusLabels(plot = pi, shape = 21, size = 8, alpha = 0.8, labCol = "black", smallAxes = F) 
+ggsave(paste0("../output/", outName, "/", outName, "_clusID_UMAP.png"), width = 7, height = 7)
 
+
+#remove susspected neutrophil and macrophage clusters (that could be doublets)
 Idents(seu.obj) <- "clusterID_integrated.harmony"
-seu.obj.sub <- subset(seu.obj, invert = T, idents = c(2)) #there are likely more to exclude
+seu.obj.sub <- subset(seu.obj, invert = T, idents = c(1,2,5,6,9,10))
 table(seu.obj.sub$clusterID_integrated.harmony)
+table(seu.obj.sub$orig.ident)
+
+#remove patient 6 b/c too few cells -- need to account for this when transfering annotations
+seu.obj.sub <- subset(seu.obj.sub, invert = T, subset = orig.ident == "nasal_pt6_tp0" | orig.ident == "nasal_pt6_tp14")
 
 #integrate the data using all of the four Seurat v5 integration methods
 seu.obj <- integrateData(seu.obj = seu.obj.sub, dout = "../output/s2/", outName = paste0(outName,"_clean"), 
-                         runAllMethods = TRUE, normalization.method = "LogNormalize", indReClus = T)
+                         runAllMethods = TRUE, normalization.method = "LogNormalize", indReClus = T, k = 95)
 
 #complete data visualization
 for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "integrated.rcpa")) {
     seu.obj <- dataVisUMAP(seu.obj = seu.obj, outDir = "../output/s3/", outName = paste0(outName, "_clean_", x), 
-                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.1, n.neighbors = 10,
+                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.3, n.neighbors = 30,
+                           prefix = "RNA_snn_res.", assay = "RNA", reduction = x,
+                           saveRDS = F, return_obj = T, returnFeats = T,
+                           features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
+                                        "IL7R", "ANPEP", "FLT3", "DLA-DRA", 
+                                        "CD4", "MS4A1", "PPBP","HBM")
+                          )
+}
+
+#switch to cca and remove the last neutrophil-like cluster
+Idents(seu.obj) <- "clusterID_integrated.cca"
+seu.obj.sub <- subset(seu.obj, invert = T, idents = 6)
+table(seu.obj.sub$clusterID_integrated.cca)
+table(seu.obj.sub$orig.ident)
+
+#integrate the data using all of the four Seurat v5 integration methods
+seu.obj <- integrateData(seu.obj = seu.obj.sub, dout = "../output/s2/", outName = paste0(outName,"_clean"), 
+                         runAllMethods = TRUE, normalization.method = "LogNormalize", indReClus = T, k = 80)
+
+#complete data visualization
+for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "integrated.rcpa")) {
+    seu.obj <- dataVisUMAP(seu.obj = seu.obj, outDir = "../output/s3/", outName = paste0(outName, "_clean_", x), 
+                           final.dims = 30, final.res = 0.1, stashID = "clusterID", algorithm = 3, min.dist = 0.5, n.neighbors = 30,
                            prefix = "RNA_snn_res.", assay = "RNA", reduction = x,
                            saveRDS = F, return_obj = T, returnFeats = T,
                            features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
@@ -98,6 +136,7 @@ contrast <- c("Post", "Pre")
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
+outName <- "nonImm_clean"
 
 #generate viln plots using harmony clusters
 vilnPlots(seu.obj = seu.obj, groupBy = clusMain, outName = outName,
