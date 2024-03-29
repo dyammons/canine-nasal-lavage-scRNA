@@ -88,7 +88,7 @@ seu.obj <- integrateData(seu.obj = seu.obj.sub, dout = "../output/s2/", outName 
 #complete data visualization
 for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "integrated.rcpa")) {
     seu.obj <- dataVisUMAP(seu.obj = seu.obj, outDir = "../output/s3/", outName = paste0(outName, "_clean_", x), 
-                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.1, n.neighbors = 10,
+                           final.dims = 30, final.res = 0.6, stashID = "clusterID", algorithm = 3, min.dist = 0.3, n.neighbors = 30,
                            prefix = "RNA_snn_res.", assay = "RNA", reduction = x,
                            saveRDS = F, return_obj = T, returnFeats = T,
                            features = c("PTPRC", "CD3E", "CD8A", "GZMA", 
@@ -99,6 +99,7 @@ for (x in list("integrated.cca", "integrated.harmony", "integrated.joint", "inte
 
 
 saveRDS(seu.obj, paste0("../output/s3/", outName, "_clean_S3.rds"))
+
 
 ################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #######   begin analysis   ######## <<<<<<<<<<<<<<
@@ -190,7 +191,7 @@ scale_fill_manual(labels = levels(seu.obj$name),
     theme(axis.title.y = element_blank(),
         axis.title.x = element_text(size = 14),
         axis.text = element_text(size = 12))
-ggsave(paste0("../output/", outName, "/", outName, "_stackedBar_cluster.png"), width =7, height = 5)
+ggsave(paste0("../output/", outName, "/", outName, "_stackedBar_cluster.png"), width = 7, height = 5)
 
 
 ### Frequency plots to run stats - cluster
