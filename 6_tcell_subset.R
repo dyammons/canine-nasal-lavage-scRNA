@@ -45,7 +45,6 @@ saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 #low quality cells identified, load object back in, remove cells, reintegrate
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 
-
 #inspect inciting clusters
 pi <- DimPlot(seu.obj, 
                 reduction = reduction, 
@@ -86,9 +85,17 @@ saveRDS(seu.obj, paste0("../output/s3/",outName,"_clean_S3.rds"))
 #######   begin analysis   ######## <<<<<<<<<<<<<<
 ################################### <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+#set output param
+outName <- "240202_lav_tcell_n8_2000_log_cfam"
+reduction <- "umap.integrated.harmony"
+clusMain <- "clusterID_integrated.harmony"
+contrast <- c("Post", "Pre")
+
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_clean_S3.rds"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
+outName <- "tcell_clean"
+
 
 #generate viln plots using harmony clusters
 vilnPlots(seu.obj = seu.obj, groupBy = clusMain, outName = outName,

@@ -56,7 +56,7 @@ saveRDS(seu.obj, paste0("../output/s3/", outName,"_S3.rds"))
 seu.obj <- readRDS(paste0("../output/s3/", outName,"_S3.rds"))
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "orig.ident", metaAdd = "name")
 seu.obj <- loadMeta(seu.obj = seu.obj, metaFile = "./metaData/refColz.csv", groupBy = "name", metaAdd = "colz")
-
+outName <- "moMac_clean"
 
 ### Check QC params
 features <- c("nCount_RNA", "nFeature_RNA", "percent.mt")
